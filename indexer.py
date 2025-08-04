@@ -1,9 +1,10 @@
 import torch
+import torchvision
 from torchvision import datasets, transforms
 import os
 
 print(f"PyTorch version: {torch.__version__}")
-print(f"Torchvision version: {datasets.__version__}")
+print(f"Torchvision version: {torchvision.__version__}")
 
 # --- Step 1: Load the Dataset ---
 
