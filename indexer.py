@@ -1,37 +1,26 @@
-import torch
-import torchvision
-from torchvision import datasets, transforms
 import os
-
-print(f"PyTorch version: {torch.__version__}")
-print(f"Torchvision version: {torchvision.__version__}")
+import torch
+from torchvision import datasets, transforms
+from feature_extractor import FeatureExtractor 
+import faiss
+import numpy as np
+from tqdm import tqdm
+import pickle
 
 # --- Step 1: Load the Dataset ---
+transform = transforms.Compose([transforms.ToTensor()])
+train_dataset = datasets.FashionMNIST(root='fashion_mnist_data', train=True, download=True, transform=transform)
 
-# Define a transform to convert images to PyTorch tensors
-transform = transforms.Compose([
-    transforms.ToTensor()
-])
+print(f"Number of images in dataset: {len(train_dataset)}")
 
-# Create a directory to store the data
-data_dir = 'fashion_mnist_data'
-if not os.path.exists(data_dir):
-    os.makedirs(data_dir)
+# --- Step 2: Initialize Feature Extractor ---
+extractor = FeatureExtractor()
+print("✅ Feature extractor initialized.")
 
-# Download the training dataset
-train_dataset = datasets.FashionMNIST(
-    root=data_dir,
-    train=True,
-    download=True,
-    transform=transform
-)
+# --- Test on a single image ---
+sample_image, _ = train_dataset[0]
+sample_embedding = extractor.get_embedding(sample_image)
+print(f"Shape of sample embedding: {sample_embedding.shape}")
 
-print("\n✅ Fashion-MNIST dataset downloaded successfully!")
-print(f"Number of images in the dataset: {len(train_dataset)}")
 
-# Let's inspect a single data point
-image, label = train_dataset[0]
-print("\n--- Sample Data Point ---")
-print(f"Image shape: {image.shape}")
-print(f"Label: {label}")
-print("Image shape means [Color Channels, Height, Width]. [1, 28, 28] is a 28x28 grayscale image.")
+
