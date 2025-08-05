@@ -8,3 +8,6 @@ fashion_mnist_data/
 # Ignore Python cache files
 __pycache__/
 *.pyc
+
+
+images/
