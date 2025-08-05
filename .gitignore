@@ -11,3 +11,6 @@ __pycache__/
 
 
 images/
+
+index_high_res.faiss
+image_paths_high_res.pkl

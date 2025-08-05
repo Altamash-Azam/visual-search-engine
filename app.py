@@ -3,27 +3,22 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 import faiss
 import pickle
-import torch
-from torchvision import datasets, transforms
 from PIL import Image
 import io
 
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware # Import the CORS middleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from feature_extractor import FeatureExtractor
+from torchvision import transforms
 
 # --- Initialization ---
 
-# Initialize FastAPI app
 app = FastAPI(title="Visual Search Engine API")
 
-# --- Add CORS Middleware ---
-# This is the new section that fixes the error.
-# It allows requests from any origin, which is fine for development.
+# Add CORS Middleware
 origins = ["*"]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -31,18 +26,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# --------------------------
 
-
-# Load the pre-built Faiss index
-print("Loading Faiss index...")
-index = faiss.read_index("index.faiss")
+# Load the high-resolution Faiss index and path mapping
+print("Loading high-resolution Faiss index...")
+index = faiss.read_index("index_high_res.faiss")
 print("✅ Index loaded.")
 
-# Load the image index mapping
-print("Loading image indices mapping...")
-with open("image_indices.pkl", "rb") as f:
-    image_indices = pickle.load(f)
+print("Loading image paths mapping...")
+with open("image_paths_high_res.pkl", "rb") as f:
+    image_paths = pickle.load(f)
 print("✅ Mapping loaded.")
 
 # Initialize our feature extractor
@@ -50,66 +42,54 @@ print("Initializing feature extractor...")
 extractor = FeatureExtractor()
 print("✅ Feature extractor initialized.")
 
-# Load the dataset (we need it to get the image paths for the results)
-transform = transforms.Compose([transforms.ToTensor()])
-train_dataset = datasets.FashionMNIST(root='fashion_mnist_data', train=True, download=False, transform=transform)
+# Define the same transformations used during indexing for the query image
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
 
 
 # --- API Endpoints ---
 
 @app.get("/")
 def read_root():
-    """A simple endpoint to check if the API is running."""
     return {"message": "Welcome to the Visual Search Engine API!"}
 
 
-@app.post("/search/")
-async def search(file: UploadFile = File(...), k: int = 5):
+@app.post("/search-high-res/")
+async def search_high_res(file: UploadFile = File(...), k: int = 5):
     """
-    Accepts an image upload, finds the k most similar images, 
-    and returns their indices.
+    Accepts a high-resolution image upload, finds the k most similar images,
+    and returns their file paths.
     """
-    # 1. Read and process the uploaded image
     contents = await file.read()
-    query_image = Image.open(io.BytesIO(contents)).convert("L") # Convert to grayscale
+    query_image = Image.open(io.BytesIO(contents)).convert("RGB")
     query_tensor = transform(query_image)
 
-    # 2. Get the embedding for the query image
     query_embedding = extractor.get_embedding(query_tensor)
     query_embedding_numpy = query_embedding.unsqueeze(0).numpy()
 
-    # 3. Search the Faiss index
-    # D: distances, I: indices of the nearest neighbors
     distances, indices = index.search(query_embedding_numpy, k)
 
-    # 4. Get the original dataset indices for the results
-    result_indices = [image_indices[i] for i in indices[0]]
+    # Get the file paths for the results using the new mapping
+    result_paths = [image_paths[i] for i in indices[0]]
 
     return JSONResponse(content={
         "message": "Search successful",
         "k": k,
-        "result_indices": result_indices,
+        "result_paths": result_paths,
         "distances": distances[0].tolist()
     })
 
 
-from fastapi.responses import StreamingResponse
-
-@app.get("/get-image/{image_index}")
-def get_image(image_index: int):
+@app.get("/get-image-by-path/")
+def get_image_by_path(path: str):
     """
-    Returns the image file for a given index from the dataset.
+    Returns an image file directly from its path.
     """
-    # Get the image tensor from the dataset
-    image_tensor, _ = train_dataset[image_index]
+    if not os.path.exists(path):
+        return JSONResponse(content={"error": "Image not found"}, status_code=404)
+    
+    return FileResponse(path)
 
-    # Convert the tensor to a PIL Image
-    # The tensor is normalized, so we need to un-normalize it (multiply by 255)
-    image_pil = transforms.ToPILImage()(image_tensor)
-
-    # Save the PIL image to a byte stream
-    img_byte_arr = io.BytesIO()
-    image_pil.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0) # Go to the beginning of the stream
-
-    return StreamingResponse(img_byte_arr, media_type="image/png")
